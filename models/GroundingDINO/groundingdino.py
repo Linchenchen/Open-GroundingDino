@@ -49,9 +49,6 @@ from .utils import MLP, ContrastiveEmbed, sigmoid_focal_loss
 
 from .matcher import build_matcher
 
-
-
-
 class GroundingDINO(nn.Module):
     """This is the Cross-Attention Detector module that performs object detection"""
 
@@ -77,7 +74,7 @@ class GroundingDINO(nn.Module):
         dn_labelbook_size=100,
         text_encoder_type="bert-base-uncased",
         sub_sentence_present=True,
-        max_text_len=256,
+        max_text_len=256
     ):
         """Initializes the model.
         Parameters:
@@ -400,8 +397,526 @@ class GroundingDINO(nn.Module):
             {"pred_logits": a, "pred_boxes": b}
             for a, b in zip(outputs_class[:-1], outputs_coord[:-1])
         ]
+    
+#     def get_custom_attention(self):
+#         """
+#         Replace original multihead attention module with custom multihead attention module.
+#         Weigthts and biases of original multihead attention module are loaded into the custom multihead
+#         attention module.
+#         """
+
+#         # Replace self attention with new attention module
+#         for name, module in self.transformer.decoder.layers[5].named_modules():
+
+#             # Modify only self attention modules that have not already been replaced
+#             if name.endswith("ca_text") and not isinstance(module, MultiHeadAttention):
+
+#                 # Get weights and biases of original self attention module
+#                 if module.in_proj_weight is not None:
+#                     # If weights are merged get the complete in_proj_weights
+#                     in_proj_weight = module.in_proj_weight
+#                     # Set the rest to None
+#                     q_proj_weight = None
+#                     k_proj_weight = None
+#                     v_proj_weight = None
+#                 else:
+#                     # If weights are not merged set complete in_proj_weights to None
+#                     in_proj_weight = None
+#                     # Get the rest of the weights
+#                     q_proj_weight = module.q_proj_weight
+#                     k_proj_weight = module.q_proj_weight
+#                     v_proj_weight = module.v_proj_weight
+
+#                 # Get the out_proj_weights
+#                 out_proj_weight = module.out_proj.weight
+
+#                 # Get the biases
+#                 if module.in_proj_bias is not None:
+#                     # If biases are used set flag and extract them
+#                     bias = True
+#                     in_proj_bias = module.in_proj_bias
+#                     out_proj_bias = module.out_proj.bias
+#                 else:
+#                     # Set flag and set biases to None
+#                     bias = False
+#                     in_proj_bias = None
+#                     out_proj_bias = None
+
+#                 # Check if bias_kv is used
+#                 if module.bias_k is not None and module.bias_v is not None:
+#                     # If k and v have bias set flag and extract the values
+#                     add_bias_kv = True
+#                     bias_k, bias_v = module.bias_k, module.bias_v
+#                 else:
+#                     # Set flag and set biases to None
+#                     add_bias_kv = False
+#                     bias_k, bias_v = None, None
+
+#                 # Replace self attention module with new attention module
+#                 multihead = MultiHeadAttention(embed_dim=module.embed_dim, num_head=module.num_heads,
+#                                                dropout=module.dropout, bias=bias, add_bias_kv=add_bias_kv,
+#                                                kdim=module.kdim, vdim=module.vdim,
+#                                                batch_first=module.batch_first)
+
+#                 # Set the weights of the new multihead attention module
+#                 multihead.set_loaded_weights(out_proj_weight=out_proj_weight, qkv_same_dim=True,
+#                                              in_proj_weight=in_proj_weight, q_proj_weight=q_proj_weight,
+#                                              k_proj_weight=k_proj_weight, v_proj_weight=v_proj_weight,
+#                                              in_proj_bias=in_proj_bias, out_proj_bias=out_proj_bias,
+#                                              bias_k=bias_k, bias_v=bias_v)
+
+#                 # Replace old attention module with new attention module
+#                 parent_module_name = name.rsplit(".", 1)[0]
+#                 parent_module = self.transformer.decoder.layers[5]
+#                 for part in parent_module_name.split("."):
+#                     parent_module = getattr(parent_module, part)
+#                 setattr(parent_module, "cross_attention", multihead)
+
+#     def initialize_head(self, init_type: Init_Head = Init_Head.DEFAULT, init_settings: dict = None) -> None:
+#         """
+#         Initialize the weights of the LoRA matrices
+
+#         Parameters
+#         ----------
+#         init_type : INIT_WEIGHT, optional
+#             The type of initialization to use, by default INIT_WEIGHT.DEFAULT
+#         init_settings : dict, optional
+#             Settings for the initialization method, by default None
+#         """
+
+#         if init_type == Init_Head.NORMAL:
+#             # If no settings are given set default
+#             if init_settings is None:
+#                 init_settings = {
+#                     "mean": 0,
+#                     "std": 0.02
+#                 }
+
+#             # Initialize the weights
+#             nn.init.normal_(self.model.heads.head.weight, **init_settings)
+
+#         elif init_type == Init_Head.KAIMING_UNIFORM:
+#             # If no settings are given set default
+#             if init_settings is None:
+#                 init_settings = {
+#                     "a": np.sqrt(5)
+#                 }
+
+#             # Initialize the weights
+#             nn.init.kaiming_uniform_(self.model.heads.head.weight, **init_settings)
+
+#         elif init_type == Init_Head.XAVIER_UNIFORM:
+#             # If no settings are given set default
+#             if init_settings is None:
+#                 init_settings = {
+#                     "gain": 1
+#                 }
+
+#             # Initialize the weights
+#             nn.init.xavier_uniform_(self.model.heads.head.weight, **init_settings)
+
+#         elif init_type == Init_Head.DEFAULT:
+#             # Use the default initialization of the model
+#             pass
+
+#         else:
+#             raise ValueError("Invalid initialization type")
 
 
+# class MultiHeadAttention(nn.modules.activation.MultiheadAttention):
+#     """
+#     Custom MultiHeadAttention module, to allow for LoRA to be added to the model,
+#     as this is not possible with the default PyTorch implementation.
+
+#     The constructor and forward pass function signature are taken from the PyTorch implementation.
+#     Most of the properties and forward pass implementation are copied from the PyTorch implementation.
+#     This is done to allow insertion of this class into pretrained PyTorch models, by replacing their MultiHeadAttention
+#     implementation with this one.
+
+#     The set_loaded_weights function is added to allow setting model weights from pretrained models.
+#     The implementation is such that it is compatible with the PyTorch implementation.
+#     """
+
+#     # NOTE: If there are errors with needing the other functions the PyTorch implementation offers make this
+#     # a subclass of nn.modules.activation.MultiHeadAttention and overload constructor and forward pass
+
+#     def __init__(self, embed_dim, num_head, dropout=0.0, bias=True, add_bias_kv=False,
+#                  kdim=None, vdim=None, batch_first=False, device=None, dtype=None) -> None:
+#         """
+#         Initialize the Multi-Headed Attention module
+
+#         Parameters
+#         ----------
+#         embed_dim : int
+#             Total dimension of the model
+#         num_head : int
+#             Number of attention heads. Embed_dim will be split across attention heads.
+#         dropout : float, optional
+#             Dropout probability on attention weights, by default 0.0
+#         bias : bool, optional
+#             Whether to add bias to the input and output projection layers, by default True
+#         add_bias_kv : bool, optional
+#             Whether to add bias to the key and value sequences, by default False
+#         kdim : int, optional
+#             Number of features in key, by default None. Uses embed_dim if None
+#         vdim : int, optional
+#             Number of features in value, by default None. Uses embed_dim if None
+#         batch_first : bool, optional
+#             Whether the input and output tensors are provided in batch_first format, by default False
+
+#         Credit
+#         ------
+#         Documentation and function signature largely taken from the PyTorch implementation.
+#         Most of the code and properties are copied from the PyTorch implementation.
+#         """
+
+#         # Call super constructor
+#         super(MultiHeadAttention, self).__init__(embed_dim, num_head, dropout, bias, add_bias_kv, batch_first, kdim, vdim)
+
+#         # Set the embedding dimensions according to the torch implementation
+#         self.embed_dim = embed_dim
+#         self.kdim = kdim if kdim is not None else embed_dim
+#         self.vdim = vdim if vdim is not None else embed_dim
+
+#         # Define number of heads
+#         self.num_head = num_head
+
+#         # Set dropout
+#         self.dropout = dropout
+
+#         self.batch_first = batch_first
+
+#         # Set the dimensions of each head
+#         self.head_dim = embed_dim // num_head
+#         assert self.head_dim * num_head == self.embed_dim, "embed_dim must be divisible by num_heads"
+
+#         # Set the bias flags
+#         self.bias = bias
+#         self.add_bias_kv = add_bias_kv
+
+#         # Define the linear layers
+#         self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=self.bias, device=device, dtype=dtype)
+#         self.k_proj = nn.Linear(self.embed_dim, self.kdim, bias=self.add_bias_kv, device=device, dtype=dtype)
+#         self.v_proj = nn.Linear(self.embed_dim, self.vdim, bias=self.add_bias_kv, device=device, dtype=dtype)
+
+#         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=False, device=device, dtype=dtype)
+
+#     def forward(
+#             self,
+#             query: Tensor,
+#             key: Tensor,
+#             value: Tensor,
+#             key_padding_mask: Optional[Tensor] = None,
+#             need_weights: bool = True,
+#             attn_mask: Optional[Tensor] = None,
+#             average_attn_weights: bool = True,
+#             is_casual: bool = False
+#     ) -> Tuple[Tensor, Optional[Tensor]]:
+#         """
+#         Forward pass of the Multi-Headed Attention module
+
+#         query : Tensor
+#             Query embeddings of shape :math:`(L, E_q)` for unbatched input, :math:`(L, N, E_q)` when ``batch_first=False``
+#             or :math:`(N, L, E_q)` when ``batch_first=True``, where :math:`L` is the target sequence length,
+#             :math:`N` is the batch size, and :math:`E_q` is the query embedding dimension ``embed_dim``.
+#             Queries are compared against key-value pairs to produce the output.
+#             See "Attention Is All You Need" for more details.
+#         key : Tensor
+#             Key embeddings of shape :math:`(S, E_k)` for unbatched input, :math:`(S, N, E_k)` when ``batch_first=False``
+#             or :math:`(N, S, E_k)` when ``batch_first=True``, where :math:`S` is the source sequence length,
+#             :math:`N` is the batch size, and :math:`E_k` is the key embedding dimension ``kdim``.
+#             See "Attention Is All You Need" for more details.
+#         value : Tensor
+#             Value embeddings of shape :math:`(S, E_v)` for unbatched input, :math:`(S, N, E_v)` when
+#             ``batch_first=False`` or :math:`(N, S, E_v)` when ``batch_first=True``, where :math:`S` is the source
+#             sequence length, :math:`N` is the batch size, and :math:`E_v` is the value embedding dimension ``vdim``.
+#             See "Attention Is All You Need" for more details.
+#         key_padding_mask : Tensor, optional
+#             If specified, a mask of shape :math:`(N, S)` indicating which elements within ``key``
+#             to ignore for the purpose of attention (i.e. treat as "padding"). For unbatched `query`, shape should be :math:`(S)`.
+#             Binary and float masks are supported.
+#             For a binary mask, a ``True`` value indicates that the corresponding ``key`` value will be ignored for
+#             the purpose of attention. For a float mask, it will be directly added to the corresponding ``key`` value.
+#         need_weights : bool, optional
+#             If specified, returns ``attn_output_weights`` in addition to ``attn_outputs``.
+#             Set ``need_weights=False`` to use the optimized ``scaled_dot_product_attention``
+#             and achieve the best performance for MHA.
+#             Default: ``True``.
+#         attn_mask : Tensor, optional
+#             If specified, a 2D or 3D mask preventing attention to certain positions. Must be of shape
+#             :math:`(L, S)` or :math:`(N\cdot\text{num\_heads}, L, S)`, where :math:`N` is the batch size,
+#             :math:`L` is the target sequence length, and :math:`S` is the source sequence length. A 2D mask will be
+#             broadcast across the batch while a 3D mask allows for a different mask for each entry in the batch.
+#             Binary and float masks are supported. For a binary mask, a ``True`` value indicates that the
+#             corresponding position is not allowed to attend. For a float mask, the mask values will be added to
+#             the attention weight.
+#             If both attn_mask and key_padding_mask are supplied, their types should match.
+#         average_attn_weights : bool, optional
+#             If true, indicates that the returned ``attn_weights`` should be averaged across
+#             heads. Otherwise, ``attn_weights`` are provided separately per head. Note that this flag only has an
+#             effect when ``need_weights=True``. Default: ``True`` (i.e. average weights across heads)
+#         is_causal : bool, optional
+#             If specified, applies a causal mask as attention mask.
+#             Default: ``False``.
+#             Warning:
+#             ``is_causal`` provides a hint that ``attn_mask`` is the
+#             causal mask. Providing incorrect hints can result in
+#             incorrect execution, including forward and backward
+#             compatibility.
+
+#         Returns
+#         -------
+#         attn_output: Tensor
+#             Attention outputs of shape :math:`(L, E)` when input is unbatched,
+#             :math:`(L, N, E)` when ``batch_first=False`` or :math:`(N, L, E)` when ``batch_first=True``,
+#             where :math:`L` is the target sequence length, :math:`N` is the batch size, and :math:`E` is the
+#             embedding dimension ``embed_dim``.
+#         attn_output_weights: Tensor, optional
+#             Only returned when ``need_weights=True``. If ``average_attn_weights=True``,
+#             returns attention weights averaged across heads of shape :math:`(L, S)` when input is unbatched or
+#             :math:`(N, L, S)`, where :math:`N` is the batch size, :math:`L` is the target sequence length, and
+#             :math:`S` is the source sequence length. If ``average_attn_weights=False``, returns attention weights per
+#             head of shape :math:`(\text{num\_heads}, L, S)` when input is unbatched or :math:`(N, \text{num\_heads}, L, S)`.
+
+#         Credit
+#         ------
+#         Documentation and function signature taken from the PyTorch documentation.
+#         """
+
+#         # Check if data is batched
+#         is_batched = query.dim() == 3
+
+#         # Set the masks if necessary
+#         key_padding_mask = F._canonical_mask(
+#             mask=key_padding_mask,
+#             mask_name="key_padding_mask",
+#             other_type=F._none_or_dtype(attn_mask),
+#             other_name="attn_mask",
+#             target_type=query.dtype
+#         )
+
+#         attn_mask = F._canonical_mask(
+#             mask=attn_mask,
+#             mask_name="attn_mask",
+#             other_type=None,
+#             other_name="",
+#             target_type=query.dtype,
+#             check_other=False,
+#         )
+
+#         # Check for nested tensors. This is also not supported by PyTorches basic implementation
+#         any_nested = query.is_nested or key.is_nested or value.is_nested
+#         assert not any_nested, "This MultiheadAttention implementation does not support NestedTensor"
+
+#         if self.batch_first and is_batched:
+#             # Make sure transpose does not affect is operation
+#             if key is value:
+#                 if query is key:
+#                     query = key = value = query.transpose(1, 0)
+#                 else:
+#                     query, key = (x.transpose(1, 0) for x in (query, key))
+#                     value = key
+#             else:
+#                 query, key, value = (x.transpose(1, 0) for x in (query, key, value))
+
+#         # If data is unbatched unsqueeze at batch dimension to ensure they have same dimension as batched inputs
+#         # Before returning the data is squeezed again to ensure output dimension matches expectation
+#         if not is_batched:
+#             query.unsqueeze(1)
+#             key.unsqueeze(1)
+#             value.unsqueeze(1)
+#             if key_padding_mask is not None:
+#                 key_padding_mask.unsqueeze(1)
+
+#         # Run the input projections
+#         q, k, v = self.q_proj(query), self.k_proj(key), self.v_proj(value)
+
+#         # Get the necessary shape variables
+#         target_len, batch_size, _ = query.shape
+#         source_len = key.shape[0]
+
+#         # Ensure correct shape of the attention mask
+#         if attn_mask is not None:
+#             if attn_mask.dim() == 2:
+#                 correct_2d_size = (target_len, source_len)
+#                 if attn_mask.shape != correct_2d_size:
+#                     raise RuntimeError(
+#                         f"The size of the 2D attn_mask is expected to be {correct_2d_size}, but got {attn_mask.shape}")
+#                 attn_mask = attn_mask.unsqueeze(0)
+#             elif attn_mask.dim() == 3:
+#                 correct_3d_size = (batch_size * self.num_head, target_len, source_len)
+#                 if attn_mask.shape != correct_3d_size:
+#                     raise RuntimeError(
+#                         f"The size of the 3D attn_mask is expected to be {correct_3d_size}, but got {attn_mask.shape}")
+#             else:
+#                 raise RuntimeError(f"attn_mask's dimension {attn_mask.dim()} is not supported")
+
+#         # If bias is present pad the mask to include the bias column in the weight matrix
+#         if self.add_bias_kv:
+#             if attn_mask is not None:
+#                 attn_mask = F.pad(attn_mask, (0, 1))
+#             if key_padding_mask is not None:
+#                 key_padding_mask = F.pad(key_padding_mask, (0, 1))
+
+#         # Create views for all heads
+#         q = q.view(target_len, batch_size * self.num_head, self.head_dim).transpose(0, 1)
+#         k = k.view(source_len, batch_size * self.num_head, self.head_dim).transpose(0, 1)
+#         v = v.view(source_len, batch_size * self.num_head, self.head_dim).transpose(0, 1)
+
+#         source_len = k.size(1)
+
+#         # Ensure proper masks
+#         if key_padding_mask is not None:
+#             assert key_padding_mask.shape == (batch_size, source_len), \
+#                 f"expecting key_padding_mask shape of {(batch_size, source_len)}, but got {key_padding_mask.shape}"
+#             key_padding_mask = key_padding_mask.view(batch_size, 1, 1, source_len). \
+#                 expand(-1, self.num_head, -1, -1).reshape(batch_size * self.num_head, 1, source_len)
+#             if attn_mask is None:
+#                 attn_mask = key_padding_mask
+#             else:
+#                 attn_mask = attn_mask + key_padding_mask
+
+#         # Disable dropout if inference
+#         if not self.training:
+#             dropout = 0.0
+#         else:
+#             dropout = self.dropout
+
+#         # Ensure proper dimension of attention mask
+#         if attn_mask is not None:
+#             if attn_mask.size(0) == 1 and attn_mask.dim() == 3:
+#                 attn_mask = attn_mask.unsqueeze(0)
+#             else:
+#                 attn_mask = attn_mask.view(batch_size, self.num_head, -1, source_len)
+
+#         # Create views pe head
+#         q = q.view(batch_size, self.num_head, target_len, self.head_dim)
+#         k = k.view(batch_size, self.num_head, source_len, self.head_dim)
+#         v = v.view(batch_size, self.num_head, source_len, self.head_dim)
+
+#         # Get attention scores using the original scaled dot product attention
+#         attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask, dropout, is_casual)
+#         # Reset shape of attention output to proper shape
+#         is_ensemble_lora = isinstance(self.out_proj, EnsembleLoRA)
+#         attn_output = attn_output.permute(2, 0, 1, 3).contiguous()
+
+#         # If model is a LoRA Ensemble need to be able to recover the batch dimension separately
+#         if is_ensemble_lora:
+#             attn_output = attn_output.view(target_len, batch_size, self.embed_dim)
+#         else:
+#             attn_output = attn_output.view(batch_size * target_len, self.embed_dim)
+
+#         # Perform output projection
+#         attn_output = self.out_proj(attn_output)
+
+#         # If model is a LoRA Ensemble batch dimension and target length were never collapsed
+#         if not is_ensemble_lora:
+#             attn_output = attn_output.view(target_len, batch_size, attn_output.size(1))
+
+#         # If data was not batched, squeeze again to match expected output shape
+#         if not is_batched:
+#             attn_output.squeeze(1)
+
+#         # If batch dimension was first dimension set it as such again
+#         if self.batch_first and is_batched:
+#             attn_output = attn_output.transpose(1, 0)
+
+#         return attn_output, None
+
+#     def set_loaded_weights(
+#             self,
+#             out_proj_weight: Tensor,
+#             qkv_same_dim: bool,
+#             in_proj_weight: Optional[Tensor] = None,
+#             q_proj_weight: Optional[Tensor] = None,
+#             k_proj_weight: Optional[Tensor] = None,
+#             v_proj_weight: Optional[Tensor] = None,
+#             in_proj_bias: Optional[Tensor] = None,
+#             out_proj_bias: Optional[Tensor] = None,
+#             bias_k: Optional[Tensor] = None,
+#             bias_v: Optional[Tensor] = None,
+#     ) -> None:
+#         """
+#         Set the loaded weights to the model
+
+#         Parameters
+#         ----------
+#         out_proj_weight : Tensor
+#             The output projection weights
+#         qkv_same_dim : bool
+#             Whether the query, key, and value projections have the same dimension
+#         in_proj_weight : Tensor, optional
+#             The input projection weights, by default None
+#             Must be provided if qkv_same_dim is True
+#         q_proj_weight : Tensor, optional
+#             The query projection weights, by default None
+#             Must be provided if qkv_same_dim is False
+#         k_proj_weight : Tensor, optional
+#             The key projection weights, by default None
+#             Must be provided if qkv_same_dim is False
+#         v_proj_weight : Tensor, optional
+#             The value projection weights, by default None
+#             Must be provided if qkv_same_dim is False
+#         in_proj_bias : Tensor, optional
+#             The input projection bias, by default None
+#             Must be provided if self.bias is True
+#         out_proj_bias : Tensor, optional
+#             The output projection bias, by default None
+#             Must be provided if self.bias is True
+#         bias_k : Tensor, optional
+#             The key projection bias, by default None
+#             Must be provided if self.add_bias_kv is True
+#         bias_v : Tensor, optional
+#             The value projection bias, by default None
+#             Must be provided if self.add_bias_kv is True
+#         """
+
+#         # If query, key and value have the same dimension, the in_proj_weight is merged
+#         if qkv_same_dim:
+#             # Check correct input
+#             if in_proj_weight is None:
+#                 raise ValueError("in_proj_weight must be provided if qkv_same_dim is True")
+
+#             # Split in_proj_weight into three separate projection weights
+#             q_proj_weight, k_proj_weight, v_proj_weight = in_proj_weight.chunk(3)
+
+#             # If there bias is used, split the bias into three parts
+#             if self.bias:
+#                 q_proj_bias, k_proj_bias, v_proj_bias = in_proj_bias.chunk(3)
+#         else:
+#             # If query, key and value have different dimensions, the weights are provided separately
+#             if any([q_proj_weight is None, k_proj_weight is None, v_proj_weight is None]):
+#                 # Ensure all weights are provided
+#                 raise ValueError(
+#                     "q_proj_weight, k_proj_weight, and v_proj_weight must be provided if qkv_same_dim is False")
+
+#         # Check if bias is used and if so if it is provided
+#         if self.bias and any([in_proj_bias is None, out_proj_bias is None]):
+#             raise ValueError("in_proj_bias and out_proj_bias must be provided if self.bias is True")
+
+#         # Check if k and v have bias and if so if it is provided
+#         if self.add_bias_kv and any([bias_k is None, bias_v is None]):
+#             raise ValueError("k_bias and v_bias must be provided if self.add_bias_kv is True")
+
+#         # Set the new weights without adding gradient connections
+#         with torch.no_grad():
+#             # Set the weights
+#             self.q_proj.weight = nn.Parameter(q_proj_weight)
+#             self.k_proj.weight = nn.Parameter(k_proj_weight)
+#             self.v_proj.weight = nn.Parameter(v_proj_weight)
+#             self.out_proj.weight = nn.Parameter(out_proj_weight)
+
+#             # Set the biases if used
+#             if self.bias:
+#                 self.q_proj.bias = nn.Parameter(q_proj_bias)
+#                 self.k_proj.bias = nn.Parameter(k_proj_bias)
+#                 self.v_proj.bias = nn.Parameter(v_proj_bias)
+#                 self.out_proj.bias = out_proj_bias
+
+#             # Set the k and v biases if used
+#             if self.add_bias_kv:
+#                 self.k_proj.bias = bias_k
+#                 self.v_proj.bias = bias_v
 
 
 class SetCriterion(nn.Module):
@@ -853,5 +1368,3 @@ def create_positive_map(tokenized, tokens_positive,cat_list,caption):
         # assert beg_pos is not None and end_pos is not None
         positive_map[j,beg_pos: end_pos + 1].fill_(1)
     return positive_map 
-
-

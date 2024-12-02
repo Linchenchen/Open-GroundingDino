@@ -1,0 +1,17 @@
+PARTITION=$1
+GPUS=$2
+GPUS_PER_NODE=$(($2<8?$2:8))
+CPUS_PER_TASK=${CPUS_PER_TASK:-1}
+CFG=$3
+DATASETS=$4
+OUTPUT_DIR=$5
+
+python -u main.py --output_dir ${OUTPUT_DIR} \
+    -c ${CFG} \
+    --eval \
+    --save_results \
+    --save_log \
+    --num_workers 3 \
+    --datasets ${DATASETS}  \
+    --pretrain_model_path groundingdino_swint_ogc.pth \
+    --options text_encoder_type=/home/qcp24001/.cache/huggingface/hub/models--bert-base-uncased/snapshots/86b5e0934494bd15c9632b12f734a8a67f723594\

@@ -78,6 +78,10 @@ class ODVGDataset(VisionDataset):
              
             vg_labels = list(pos_labels)
             num_to_add = min(len(neg_labels), self.max_labels-len(pos_labels))
+            
+            if isinstance(neg_labels, (dict, set)):
+                neg_labels = list(neg_labels)
+                
             if num_to_add > 0:
                 vg_labels.extend(random.sample(neg_labels, num_to_add))
             

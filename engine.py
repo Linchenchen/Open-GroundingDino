@@ -7,6 +7,8 @@ import math
 import os
 import sys
 from typing import Iterable
+import ipdb
+import loratorch as lora
 
 from util.utils import to_device
 import torch
@@ -84,7 +86,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         if args.onecyclelr:
             lr_scheduler.step()
-
+        
+        lora.register_model_param_after_backward(model)
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         if 'class_error' in loss_dict_reduced:
@@ -117,6 +120,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
     model.eval()
     criterion.eval()
+
+    # ipdb.set_trace()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
     if not wo_class_error:
@@ -172,15 +177,18 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
 
         results = postprocessors['bbox'](outputs, orig_target_sizes)
+        # ipdb.set_trace()
         # [scores: [100], labels: [100], boxes: [100, 4]] x B
         if 'segm' in postprocessors.keys():
             target_sizes = torch.stack([t["size"] for t in targets], dim=0)
             results = postprocessors['segm'](results, outputs, orig_target_sizes, target_sizes)
-            
+        
+        # add image_id to the result
         res = {target['image_id'].item(): output for target, output in zip(targets, results)}
 
         if coco_evaluator is not None:
             coco_evaluator.update(res)
+        # ipdb.set_trace()
 
         if panoptic_evaluator is not None:
             res_pano = postprocessors["panoptic"](outputs, target_sizes, orig_target_sizes)
@@ -216,7 +224,15 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
                 _res_prob = res['scores']
                 _res_label = res['labels']
                 res_info = torch.cat((_res_bbox, _res_prob.unsqueeze(-1), _res_label.unsqueeze(-1)), 1)
-       
+
+                # _out_bbox = outputs['pred_boxes'][0] # torch.Size([900, 4])
+                # _out_logits = outputs['pred_logits'][0] # torch.Size([900, 256])
+                # _out_text_mask = outputs['text_mask'][0] # torch.Size([256])
+                # _out_aux_outputs = outputs['aux_outputs'] # torch.Size([900, 256])
+                # _out_token = out['token']
+                # _out_interm_outputs = out['interm_outputs']
+                # _out_interm_outputs_for_matching_pre = out['interm_outputs_for_matching_pre']
+                # out_info = torch.cat((_out_bbox, _out_logits, _out_text_mask, _out_aux_outputs, _out_token, _out_interm_outputs, _out_interm_outputs_for_matching_pre), 1)
 
                 if 'gt_info' not in output_state_dict:
                     output_state_dict['gt_info'] = []
@@ -225,6 +241,11 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
                 if 'res_info' not in output_state_dict:
                     output_state_dict['res_info'] = []
                 output_state_dict['res_info'].append(res_info.cpu())
+
+                # Save outputs
+                if 'outputs' not in output_state_dict:
+                    output_state_dict['outputs'] = []
+                output_state_dict['outputs'].append(outputs)
 
             # # for debug only
             # import random
@@ -237,7 +258,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             if _cnt % 15 == 0:
                 print("BREAK!"*5)
                 break
-
+                
     if args.save_results:
         import os.path as osp
         

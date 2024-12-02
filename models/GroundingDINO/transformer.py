@@ -21,6 +21,7 @@ from typing import Optional
 import torch
 import torch.utils.checkpoint as checkpoint
 from torch import Tensor, nn
+import loratorch as lora
 
 from groundingdino.util.misc import inverse_sigmoid
 
@@ -142,6 +143,30 @@ class Transformer(nn.Module):
             query_dim=query_dim,
             num_feature_levels=num_feature_levels,
         )
+
+        # q_proj = lora.Linear(d_model, d_model, r=8)
+        # k_proj = lora.Linear(d_model, d_model, r=8)
+        # v_proj = nn.Linear(d_model, d_model)
+        # # Alternatively, use lora.MergedLinear (recommended)
+        # self.decoder.layers[0].ca_text.in_proj_weight = lora.MergedLinear(d_model, 3*d_model, r=8, enable_lora=[True, True, False])
+
+        # for layer_index, resblock in enumerate(clip_model.visual.transformer.resblocks):
+        #     if hasattr(resblock, 'attn'):
+        #         multihead = resblock.attn
+        #         embed_dim = multihead.embed_dim
+        #         num_heads = multihead.num_heads
+
+        #         lora_multihead = loratorch.MultiheadAttention(embed_dim, num_heads, r=r)
+        #         resblock.attn = lora_multihead
+       
+        # ! choose which layer to add lora to
+        multihead = self.decoder.layers[5].ca_text
+        embed_dim = multihead.embed_dim
+        num_heads = multihead.num_heads
+        
+        lora_multihead = lora.MultiheadAttention(embed_dim, num_heads, r=8)
+
+        self.decoder.layers[0].ca_text = lora_multihead
 
         self.d_model = d_model
         self.nhead = nhead
@@ -908,6 +933,7 @@ class DeformableTransformerDecoderLayer(nn.Module):
             tgt = tgt + self.dropout2(tgt2)
             tgt = self.norm2(tgt)
 
+        # cross attention text
         if self.use_text_cross_attention:
             tgt2 = self.ca_text(
                 self.with_pos_embed(tgt, tgt_query_pos),
@@ -917,7 +943,8 @@ class DeformableTransformerDecoderLayer(nn.Module):
             )[0]
             tgt = tgt + self.catext_dropout(tgt2)
             tgt = self.catext_norm(tgt)
-
+        
+        # cross attention with image
         tgt2 = self.cross_attn(
             query=self.with_pos_embed(tgt, tgt_query_pos).transpose(0, 1),
             reference_points=tgt_reference_points.transpose(0, 1).contiguous(),

@@ -17,5 +17,5 @@ srun -p ${PARTITION} \
         -c ${CFG} \
         --eval \
         --datasets ${DATASETS}  \
-        --pretrain_model_path /path/to/groundingdino_swint_ogc.pth \
-        --options text_encoder_type=/path/to/bert-base-uncased
+        --pretrain_model_path groundingdino_swint_ogc.pth \
+        --options text_encoder_type=/home/qcp24001/.cache/huggingface/hub/models--bert-base-uncased/snapshots/86b5e0934494bd15c9632b12f734a8a67f723594

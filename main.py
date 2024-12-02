@@ -18,11 +18,14 @@ from util.utils import  BestMetricHolder
 import util.misc as utils
 
 import datasets
+import ipdb
+import wandb
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
 
 from groundingdino.util.utils import clean_state_dict
 
+import loralib as lora
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
@@ -83,7 +86,7 @@ def build_model_main(args):
 
 
 def main(args):
-    
+    run = wandb.init(project="groundingdino_lora", name=args.output_dir, config=args)
 
     utils.setup_distributed(args)
     # load cfg file and update the args
@@ -146,6 +149,7 @@ def main(args):
     model.to(device)
     logger.debug("build model, done.")
 
+    # ipdb.set_trace()
 
     model_without_ddp = model
     if args.distributed:
@@ -156,6 +160,7 @@ def main(args):
     logger.info('number of params:'+str(n_parameters))
     logger.info("params before freezing:\n"+json.dumps({n: p.numel() for n, p in model.named_parameters() if p.requires_grad}, indent=2))
 
+
     param_dicts = get_param_dict(args, model_without_ddp)
     
     # freeze some layers
@@ -165,12 +170,16 @@ def main(args):
                 if keyword in name:
                     parameter.requires_grad_(False)
                     break
+    lora.mark_only_lora_as_trainable(model)
     logger.info("params after freezing:\n"+json.dumps({n: p.numel() for n, p in model.named_parameters() if p.requires_grad}, indent=2))
 
     optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
                                   weight_decay=args.weight_decay)
 
     logger.debug("build dataset ... ...")
+
+    run.watch(model)
+
     if not args.eval:
         num_of_dataset_train = len(dataset_meta["train"])
         if num_of_dataset_train == 1:
@@ -208,6 +217,8 @@ def main(args):
         lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=args.lr, steps_per_epoch=len(data_loader_train), epochs=args.epochs, pct_start=0.2)
     elif args.multi_step_lr:
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.lr_drop_list)
+    elif args.cosine_lr:
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.eta_min)
     else:
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
 
@@ -285,6 +296,9 @@ def main(args):
         train_stats = train_one_epoch(
             model, criterion, data_loader_train, optimizer, device, epoch,
             args.clip_max_norm, wo_class_error=wo_class_error, lr_scheduler=lr_scheduler, args=args, logger=(logger if args.save_log else None))
+        
+        wandb.log({"train_loss": train_stats['loss']})
+
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
 
@@ -354,7 +368,9 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
-
+    torch.save(lora.lora_state_dict(model), output_dir / 'checkpoint_lora.pth')
+    run.finish()
+    
     # remove the copied files.
     copyfilelist = vars(args).get('copyfilelist')
     if copyfilelist and args.local_rank == 0:
