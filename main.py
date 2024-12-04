@@ -86,6 +86,7 @@ def build_model_main(args):
 
 
 def main(args):
+    wandb.login()
     run = wandb.init(project="groundingdino_lora", name=args.output_dir, config=args)
 
     utils.setup_distributed(args)

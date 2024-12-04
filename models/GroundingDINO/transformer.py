@@ -160,13 +160,14 @@ class Transformer(nn.Module):
         #         resblock.attn = lora_multihead
        
         # ! choose which layer to add lora to
-        multihead = self.decoder.layers[5].ca_text
+        layer_index = 5
+        multihead = self.decoder.layers[layer_index].ca_text
         embed_dim = multihead.embed_dim
         num_heads = multihead.num_heads
         
         lora_multihead = lora.MultiheadAttention(embed_dim, num_heads, r=8)
 
-        self.decoder.layers[0].ca_text = lora_multihead
+        self.decoder.layers[layer_index].ca_text = lora_multihead
 
         self.d_model = d_model
         self.nhead = nhead
