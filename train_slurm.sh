@@ -1,16 +1,14 @@
-PARTITION=$1
-GPUS=$2
-GPUS_PER_NODE=$(($2<8?$2:8))
+GPUS=$1
+GPUS_PER_NODE=$(($1<8?$1:8))
 CPUS_PER_TASK=${CPUS_PER_TASK:-1}
-CFG=$3
-DATASETS=$4
-OUTPUT_DIR=$5
-EMAIL=$6
+CFG=$2
+DATASETS=$3
+OUTPUT_DIR=$4
+EMAIL=$5
 
 srun --ntasks=1 \
     --nodes=1 \
     --mem=100G \
-    -p ${PARTITION} \
     --job-name=open_G_dino \
     --gres=gpu:${GPUS_PER_NODE} \
     --time=12:00:00 \
