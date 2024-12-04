@@ -240,7 +240,7 @@ def main(args):
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
         model_without_ddp.load_state_dict(clean_state_dict(checkpoint['model']),strict=False)
-
+        model_without_ddp.load_state_dict(checkpoint['lora_state_dict'],strict=False)
 
         
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
@@ -305,6 +305,7 @@ def main(args):
 
         if not args.onecyclelr:
             lr_scheduler.step()
+
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
             # extra checkpoint before LR drop and every 100 epochs
@@ -317,10 +318,10 @@ def main(args):
                     'lr_scheduler': lr_scheduler.state_dict(),
                     'epoch': epoch,
                     'args': args,
+                    'lora_state_dict': lora.lora_state_dict(model)
                 }
-
                 utils.save_on_master(weights, checkpoint_path)
-                
+   
         # eval
         test_stats, coco_evaluator = evaluate(
             model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir,
@@ -336,6 +337,7 @@ def main(args):
                 'lr_scheduler': lr_scheduler.state_dict(),
                 'epoch': epoch,
                 'args': args,
+                'lora_state_dict': lora.lora_state_dict(model)
             }, checkpoint_path)
         log_stats = {
             **{f'train_{k}': v for k, v in train_stats.items()},
@@ -369,7 +371,6 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
-    torch.save(lora.lora_state_dict(model), output_dir / 'checkpoint_lora.pth')
     run.finish()
     
     # remove the copied files.
