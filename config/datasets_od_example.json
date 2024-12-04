@@ -2,8 +2,8 @@
   "train": [
     {
       "root": "/scratch/fem17004/qcp24001/coco/images/train2017",
-      "anno": "/home/qcp24001/Open-GroundingDino/config/coco2017_train_odvg.jsonl",
-      "label_map": "/home/qcp24001/Open-GroundingDino/config/coco2017_label_map.json",
+      "anno": "config/coco2017_train_odvg.jsonl",
+      "label_map": "config/coco2017_label_map.json",
       "dataset_mode": "odvg"
     }
   ],
